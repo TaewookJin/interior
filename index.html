@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="default"/>
+<meta name="apple-mobile-web-app-title" content="마감산출"/>
+<title>마감 산출 계산기</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  body{background:#f5f3f0;font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif;overscroll-behavior:none;}
+  input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;}
+  input{-webkit-appearance:none;border-radius:6px;}
+  button{-webkit-appearance:none;}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useMemo}=React;
+const C={bg:"#f5f3f0",card:"#faf9f7",mid1:"#a09890",mid2:"#5a5550",light:"#eceae6",dark:"#767062",text:"#3a3632",sidebar:"#dedad2",divider:"#e8e4df",preview:"#f0ede8"};
+const WOOD_PRICES={gyp:4100,mdf:17000,daruki:2200};
+const DEFAULT_TILES=[
+  {id:"t1",label:"600×600",w:0.6,h:0.6,perBox:4,price:0},
+  {id:"t2",label:"1200×600",w:1.2,h:0.6,perBox:2,price:0},
+  {id:"t3",label:"800×800",w:0.8,h:0.8,perBox:3,price:0},
+  {id:"t4",label:"300×600",w:0.3,h:0.6,perBox:8,price:0},
+  {id:"t5",label:"300×300",w:0.3,h:0.3,perBox:16,price:0},
+];
+function fmt(n){return Math.round(n).toLocaleString();}
+function calcWood(type,dims,opts,lr=0){
+  const{gypLayers,hasMdf,hasDaruki,darukiSpacing,ceilingHeight}=opts;
+  const loss=1+lr/100,sp=darukiSpacing||600;
+  let g=0,m=0,d=0;
+  if(type==="wall"){const n=dims.length,h=(dims.height||ceilingHeight||2300)/1000;g=Math.ceil((n/0.9)*Math.ceil(h/1.8)*gypLayers*loss);m=hasMdf?Math.ceil((n/1.2)*loss):0;d=hasDaruki?Math.ceil((n/(sp/1000)+1)*loss):0;}
+  else{const w=dims.width,dp=dims.depth;g=Math.ceil(Math.min((w/0.9)*(dp/1.8),(w/1.8)*(dp/0.9))*gypLayers*loss);m=hasMdf?Math.ceil(Math.min((w/1.2)*(dp/2.4),(w/2.4)*(dp/1.2))*loss):0;d=hasDaruki?Math.ceil((w/(sp/1000)+1)*loss):0;}
+  const gt=g*WOOD_PRICES.gyp,mt=m*WOOD_PRICES.mdf,dt=d*WOOD_PRICES.daruki;
+  return{gypCount:g,mdfCount:m,darukiCount:d,gypTotal:gt,mdfTotal:mt,darukiTotal:dt,total:gt+mt+dt};
+}
+function calcTile(type,dims,tw,th,lr){
+  const loss=1+lr/100,area=type==="wall"?dims.length*(dims.height/1000):dims.width*dims.depth;
+  return{area,count:Math.ceil((area/(tw*th))*loss)};
+}
+let uid=1;
+
+// ── 공통 컴포넌트 ──
+function Btn({active,onClick,children}){return <button onClick={onClick} style={{flex:1,padding:"9px 0",borderRadius:6,fontSize:13,fontWeight:500,border:"1px solid "+(active?C.dark:C.mid1),background:active?C.dark:C.card,color:active?"#fff":C.mid2,cursor:"pointer"}}>{children}</button>;}
+function SmBtn({active,onClick,children}){return <button onClick={onClick} style={{padding:"7px 9px",borderRadius:5,fontSize:12,fontWeight:500,border:"1px solid "+(active?C.dark:C.mid1),background:active?C.dark:C.card,color:active?"#fff":C.mid2,cursor:"pointer"}}>{children}</button>;}
+function TagBtn({active,onClick,children}){return <button onClick={onClick} style={{padding:"8px 13px",borderRadius:6,fontSize:12,fontWeight:500,border:"1px solid "+(active?C.dark:C.mid1),background:active?C.dark:C.card,color:active?"#fff":C.mid2,cursor:"pointer"}}>{children}</button>;}
+function InBtn({active,onClick,children}){return <button onClick={onClick} style={{marginLeft:6,fontSize:10,padding:"2px 7px",borderRadius:4,border:"1px solid "+(active?C.dark:C.mid1),background:active?C.dark:C.card,color:active?"#fff":C.mid2,cursor:"pointer"}}>{children}</button>;}
+function Lbl({children}){return <div style={{fontSize:11,color:C.mid2,marginBottom:8}}>{children}</div>;}
+function Divdr(){return <div style={{borderTop:"1px solid "+C.divider,margin:"16px 0"}}/>;}
+function Card({children,style={}}){return <div style={{background:C.card,borderRadius:12,padding:20,marginBottom:12,...style}}>{children}</div>;}
+function NInput({value,onChange,placeholder,width=80,unit}){
+  return <div style={{display:"flex",alignItems:"center",gap:5}}>
+    <input type="number" min="0" step="0.1" value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder||"0.0"}
+      style={{width,padding:"10px 11px",borderRadius:6,fontSize:17,fontWeight:700,border:"1px solid "+C.mid1,outline:"none",color:C.text,textAlign:"right",background:C.card}}/>
+    {unit&&<span style={{fontSize:13,color:C.mid2}}>{unit}</span>}
+  </div>;
+}
+function TInput({value,onChange,placeholder}){
+  return <input value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder}
+    style={{width:"100%",padding:"10px 12px",borderRadius:6,border:"1px solid "+C.mid1,fontSize:13,color:C.text,outline:"none",background:C.card}}/>;
+}
+function LossInput({lr,setLr}){
+  return <div style={{marginBottom:18}}>
+    <Lbl>로스율 (전체 적용)</Lbl>
+    <div style={{display:"flex",alignItems:"center",gap:8}}>
+      <input type="number" min="0" max="100" step="1" value={lr} onChange={e=>setLr(Math.max(0,Math.min(100,Number(e.target.value))))}
+        style={{width:68,padding:"9px 10px",borderRadius:6,fontSize:17,fontWeight:700,border:"1px solid "+C.mid1,outline:"none",color:C.text,textAlign:"right",background:C.card}}/>
+      <span style={{fontSize:13,color:C.mid2}}>%</span>
+      <div style={{display:"flex",gap:4}}>{[0,5,10,15].map(v=><SmBtn key={v} active={lr===v} onClick={()=>setLr(v)}>{v}%</SmBtn>)}</div>
+    </div>
+  </div>;
+}
+function AddBtn({canAdd,onClick}){return <button onClick={onClick} disabled={!canAdd} style={{width:"100%",padding:"13px 0",borderRadius:8,fontSize:14,fontWeight:600,background:canAdd?C.dark:C.light,color:canAdd?"#fff":C.mid1,border:"none",cursor:canAdd?"pointer":"default"}}>추가</button>;}
+function PLine({label,qty,val}){return <div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:C.text,marginBottom:5}}><span>{label} <span style={{color:C.mid1}}>{qty}</span></span><span>{fmt(val)}원</span></div>;}
+function SLine({label,qty,val}){return <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><span style={{fontSize:12,color:C.mid1}}>{label}</span><span style={{fontSize:11,color:C.mid2,marginLeft:6}}>{qty}</span></div><span style={{fontSize:13,fontWeight:600,color:C.light}}>{val}원</span></div>;}
+function TotalBox({children,items,lr,note}){
+  return <div style={{background:C.dark,borderRadius:12,padding:"22px 20px",color:"#fff"}}>
+    <div style={{fontSize:11,color:C.mid1,marginBottom:4}}>{items}개 항목{lr>0?` · 로스 +${lr}%`:""}</div>
+    {children}
+    <div style={{borderTop:"1px solid rgba(255,255,255,0.15)",marginTop:14,paddingTop:12,fontSize:11,color:C.mid1}}>{note}</div>
+  </div>;
+}
+
+// ── 목자재 ──
+function WoodCalc(){
+  const[tab,setTab]=useState("wall");
+  const[gl,setGl]=useState(1);
+  const[mdf,setMdf]=useState(false);
+  const[dar,setDar]=useState(false);
+  const[dsp,setDsp]=useState(600);
+  const[lr,setLr]=useState(0);
+  const[lbl,setLbl]=useState("");
+  const[wl,setWl]=useState("");
+  const[uch,setUch]=useState(false);
+  const[ch,setCh]=useState("2300");
+  const[cw,setCw]=useState("");
+  const[cd,setCd]=useState("");
+  const[items,setItems]=useState([]);
+  const cht=uch?(parseFloat(ch)||2300):2300;
+  const opts={gypLayers:gl,hasMdf:mdf,hasDaruki:dar,darukiSpacing:dsp,ceilingHeight:cht};
+  const pd=tab==="wall"?{length:parseFloat(wl)||0,height:cht}:{width:parseFloat(cw)||0,depth:parseFloat(cd)||0};
+  const can=tab==="wall"?pd.length>0:pd.width>0&&pd.depth>0;
+  const prev=useMemo(()=>can?calcWood(tab,pd,opts,lr):null,[tab,wl,cw,cd,gl,mdf,dar,dsp,cht,lr]);
+  function add(){if(!can)return;const r=calcWood(tab,pd,opts,lr);const l=lbl||(tab==="wall"?`벽 (${pd.length}m)`:`천장 (${pd.width}×${pd.depth}m)`);setItems(p=>[...p,{id:uid++,type:tab,label:l,dims:{...pd},opts:{...opts},result:r}]);setLbl("");setWl("");setCw("");setCd("");setGl(1);setMdf(false);setDar(false);}
+  function rm(id){setItems(p=>p.filter(i=>i.id!==id));}
+  const tot=useMemo(()=>items.reduce((a,item)=>{const r=calcWood(item.type,item.dims,item.opts,lr);return{total:a.total+r.total,gyp:a.gyp+r.gypTotal,mdf:a.mdf+r.mdfTotal,dar:a.dar+r.darukiTotal,gc:a.gc+r.gypCount,mc:a.mc+r.mdfCount,dc:a.dc+r.darukiCount};},{total:0,gyp:0,mdf:0,dar:0,gc:0,mc:0,dc:0}),[items,lr]);
+  const cLbl=item=>{const p=[];if(item.opts.gypLayers>0)p.push(`석고 ${item.opts.gypLayers}겹`);if(item.opts.hasDaruki)p.push(`다루끼 ${item.opts.darukiSpacing}mm`);if(item.opts.hasMdf)p.push("MDF");return p.join(" · ")||"없음";};
+  return <div>
+    <Card>
+      <div style={{display:"flex",gap:5,marginBottom:18}}><Btn active={tab==="wall"} onClick={()=>setTab("wall")}>벽</Btn><Btn active={tab==="ceiling"} onClick={()=>setTab("ceiling")}>천장</Btn></div>
+      <div style={{marginBottom:14}}><Lbl>이름 (선택)</Lbl><TInput value={lbl} onChange={setLbl} placeholder={tab==="wall"?"예: 북쪽 벽":"예: 안방 천장"}/></div>
+      {tab==="wall"?<div style={{marginBottom:14}}><Lbl>벽 치수</Lbl><div style={{display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap"}}>
+        <div><div style={{fontSize:10,color:C.mid1,marginBottom:4}}>길이</div><NInput value={wl} onChange={setWl} unit="m"/></div>
+        <div><div style={{fontSize:10,color:C.mid1,marginBottom:4}}>천장고<InBtn active={uch} onClick={()=>setUch(v=>!v)}>직접입력</InBtn></div>
+          {uch?<NInput value={ch} onChange={setCh} placeholder="2300" unit="mm" width={90}/>:<div style={{padding:"10px 11px",borderRadius:6,border:"1px solid "+C.divider,fontSize:17,fontWeight:700,color:C.mid1,background:C.light,width:80,textAlign:"right"}}>2300<span style={{fontSize:12,fontWeight:400,color:C.mid1,marginLeft:3}}>mm</span></div>}
+        </div></div></div>
+      :<div style={{marginBottom:14}}><Lbl>천장 치수</Lbl><div style={{display:"flex",gap:10,alignItems:"center"}}><NInput value={cw} onChange={setCw} placeholder="가로" unit="m"/><span style={{color:C.mid1,fontSize:13}}>×</span><NInput value={cd} onChange={setCd} placeholder="세로" unit="m"/></div></div>}
+      <Divdr/>
+      <div style={{marginBottom:12}}><Lbl>석고보드 (900×1800)</Lbl><div style={{display:"flex",gap:5}}>{[0,1,2].map(v=><Btn key={v} active={gl===v} onClick={()=>setGl(v)}>{v===0?"없음":`${v}겹`}</Btn>)}</div></div>
+      <div style={{marginBottom:12}}><Lbl>MDF (1200×2400)</Lbl><div style={{display:"flex",gap:5}}><Btn active={!mdf} onClick={()=>setMdf(false)}>없음</Btn><Btn active={mdf} onClick={()=>setMdf(true)}>포함</Btn></div></div>
+      <div style={{marginBottom:12}}><Lbl>다루끼</Lbl><div style={{display:"flex",gap:5}}><Btn active={!dar} onClick={()=>setDar(false)}>없음</Btn><Btn active={dar} onClick={()=>setDar(true)}>포함</Btn></div>
+        {dar&&<div style={{display:"flex",gap:5,marginTop:8}}><Btn active={dsp===600} onClick={()=>setDsp(600)}>600mm</Btn><Btn active={dsp===900} onClick={()=>setDsp(900)}>900mm</Btn></div>}
+      </div>
+      <LossInput lr={lr} setLr={setLr}/>
+      {prev&&<div style={{background:C.preview,borderRadius:8,padding:"12px 14px",marginBottom:14}}>
+        {gl>0&&<PLine label={`석고보드 ${gl}겹`} qty={`${prev.gypCount}장`} val={prev.gypTotal}/>}
+        {mdf&&<PLine label="MDF" qty={`${prev.mdfCount}장`} val={prev.mdfTotal}/>}
+        {dar&&<PLine label={`다루끼 ${dsp}mm`} qty={`${prev.darukiCount}개`} val={prev.darukiTotal}/>}
+        <div style={{borderTop:"1px solid "+C.divider,marginTop:8,paddingTop:8,display:"flex",justifyContent:"space-between"}}><span style={{fontSize:12,color:C.mid2}}>소계</span><span style={{fontSize:15,fontWeight:700,color:C.text}}>{fmt(prev.total)}원</span></div>
+      </div>}
+      <AddBtn canAdd={can} onClick={add}/>
+    </Card>
+    {items.length>0&&<Card>{items.map((item,i)=>{const r=calcWood(item.type,item.dims,item.opts,lr);return(
+      <div key={item.id} style={{display:"flex",alignItems:"center",gap:10,padding:"13px 0",borderBottom:i<items.length-1?"1px solid "+C.divider:"none"}}>
+        <span style={{fontSize:10,color:C.mid1,width:14,flexShrink:0,textAlign:"center"}}>{item.type==="wall"?"벽":"천"}</span>
+        <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:600,color:C.text}}>{item.label}</div><div style={{fontSize:11,color:C.mid1,marginTop:1}}>{cLbl(item)}</div></div>
+        <div style={{textAlign:"right",flexShrink:0}}><div style={{fontSize:13,fontWeight:600,color:C.text}}>{fmt(r.total)}원</div><div style={{fontSize:11,color:C.mid1}}>{item.type==="wall"?`${item.dims.length}m`:`${item.dims.width}×${item.dims.depth}m`}</div></div>
+        <button onClick={()=>rm(item.id)} style={{border:"none",background:"none",cursor:"pointer",color:C.mid1,fontSize:18,padding:"0 2px",flexShrink:0}}>×</button>
+      </div>);})}
+    </Card>}
+    {items.length>0&&<TotalBox items={items.length} lr={lr} note="인건비·부자재 별도">
+      <div style={{fontSize:30,fontWeight:700,letterSpacing:-1,marginBottom:16}}>{fmt(tot.total)}원</div>
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {tot.gyp>0&&<SLine label="석고보드" qty={`${tot.gc}장`} val={fmt(tot.gyp)}/>}
+        {tot.mdf>0&&<SLine label="MDF" qty={`${tot.mc}장`} val={fmt(tot.mdf)}/>}
+        {tot.dar>0&&<SLine label="다루끼" qty={`${tot.dc}개`} val={fmt(tot.dar)}/>}
+      </div>
+    </TotalBox>}
+  </div>;
+}
+
+// ── 타일 ──
+function TileCalc(){
+  const[tab,setTab]=useState("wall");
+  const[mode,setMode]=useState("size");
+  const[lr,setLr]=useState(0);
+  const[lbl,setLbl]=useState("");
+  const[wl,setWl]=useState("");
+  const[uch,setUch]=useState(false);
+  const[ch,setCh]=useState("2300");
+  const[fw,setFw]=useState("");
+  const[fd,setFd]=useState("");
+  const[bc,setBc]=useState("");
+  const[sel,setSel]=useState("t1");
+  const[items,setItems]=useState([]);
+  const[tiles,setTiles]=useState(DEFAULT_TILES);
+  const[showSet,setShowSet]=useState(false);
+  const tile=tiles.find(t=>t.id===sel)||tiles[0];
+  const cht=uch?(parseFloat(ch)||2300):2300;
+  const pd=tab==="wall"?{length:parseFloat(wl)||0,height:cht}:{width:parseFloat(fw)||0,depth:parseFloat(fd)||0};
+  const can=mode==="box"?(parseFloat(bc)||0)>0:tab==="wall"?pd.length>0:pd.width>0&&pd.depth>0;
+  const prev=useMemo(()=>{
+    if(mode==="box"){const b=parseFloat(bc)||0;if(!b)return null;return{area:null,count:b*tile.perBox,boxes:b,total:tile.price>0?b*tile.price:null};}
+    if(!can)return null;
+    const{area,count}=calcTile(tab,pd,tile.w,tile.h,lr);const boxes=Math.ceil(count/tile.perBox);
+    return{area,count,boxes,total:tile.price>0?boxes*tile.price:null};
+  },[tab,mode,wl,fw,fd,bc,sel,lr,cht,tiles]);
+  function add(){if(!can)return;let area=null,count,boxes,total;
+    if(mode==="box"){boxes=parseFloat(bc)||0;count=boxes*tile.perBox;total=tile.price>0?boxes*tile.price:null;}
+    else{({area,count}=calcTile(tab,pd,tile.w,tile.h,lr));boxes=Math.ceil(count/tile.perBox);total=tile.price>0?boxes*tile.price:null;}
+    const l=lbl||(mode==="box"?`${tile.label} (${boxes}박스)`:tab==="wall"?`벽 (${pd.length}m)`:`바닥 (${pd.width}×${pd.depth}m)`);
+    setItems(p=>[...p,{id:uid++,type:mode==="box"?"box":tab,label:l,dims:{...pd},mode,tile:{...tile},lr,result:{area,count,boxes,total}}]);
+    setLbl("");setWl("");setFw("");setFd("");setBc("");
+  }
+  function rm(id){setItems(p=>p.filter(i=>i.id!==id));}
+  const ci=useMemo(()=>items.map(item=>{if(item.mode==="box")return item;const{area,count}=calcTile(item.type,item.dims,item.tile.w,item.tile.h,lr);const boxes=Math.ceil(count/item.tile.perBox);return{...item,result:{area,count,boxes,total:item.tile.price>0?boxes*item.tile.price:null}};}),[items,lr]);
+  const tot=useMemo(()=>ci.reduce((a,item)=>({count:a.count+item.result.count,boxes:a.boxes+item.result.boxes,total:a.total+(item.result.total||0),hasPrice:a.hasPrice||item.tile.price>0}),{count:0,boxes:0,total:0,hasPrice:false}),[ci]);
+  function upTile(id,key,val){setTiles(p=>p.map(t=>t.id===id?{...t,[key]:key==="label"?val:Number(val)}:t));}
+  return <div>
+    <div style={{display:"flex",justifyContent:"flex-end",marginBottom:10}}>
+      <button onClick={()=>setShowSet(v=>!v)} style={{fontSize:12,padding:"6px 12px",borderRadius:6,border:"1px solid "+(showSet?C.dark:C.mid1),background:showSet?C.dark:C.card,color:showSet?"#fff":C.mid2,cursor:"pointer"}}>타일 설정</button>
+    </div>
+    {showSet&&<Card>
+      <div style={{fontSize:12,fontWeight:600,color:C.mid2,marginBottom:14}}>타일 규격 설정</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:6}}>{["규격명","1박스(장)","단가(원/박스)"].map((h,i)=><div key={i} style={{fontSize:10,color:C.mid1}}>{h}</div>)}</div>
+      {tiles.map(t=><div key={t.id} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:6}}>
+        <input value={t.label} onChange={e=>upTile(t.id,"label",e.target.value)} style={{width:"100%",padding:"8px",borderRadius:6,border:"1px solid "+C.mid1,fontSize:12,color:C.text,outline:"none",background:C.card}}/>
+        <input type="number" min="1" value={t.perBox} onChange={e=>upTile(t.id,"perBox",e.target.value)} style={{width:"100%",padding:"8px",borderRadius:6,border:"1px solid "+C.mid1,fontSize:12,outline:"none",textAlign:"right",background:C.card}}/>
+        <input type="number" min="0" value={t.price} onChange={e=>upTile(t.id,"price",e.target.value)} placeholder="0" style={{width:"100%",padding:"8px",borderRadius:6,border:"1px solid "+C.mid1,fontSize:12,outline:"none",textAlign:"right",background:C.card}}/>
+      </div>)}
+      <div style={{fontSize:10,color:C.mid1,marginTop:6}}>단가는 박스당 금액 기준</div>
+    </Card>}
+    <Card>
+      <div style={{display:"flex",gap:5,marginBottom:18}}>
+        <Btn active={mode==="size"&&tab==="wall"} onClick={()=>{setMode("size");setTab("wall");}}>벽</Btn>
+        <Btn active={mode==="size"&&tab==="floor"} onClick={()=>{setMode("size");setTab("floor");}}>바닥</Btn>
+        <Btn active={mode==="box"} onClick={()=>setMode("box")}>박스 직접</Btn>
+      </div>
+      <div style={{marginBottom:14}}><Lbl>이름 (선택)</Lbl><TInput value={lbl} onChange={setLbl} placeholder={mode==="box"?"예: 추가 여유분":tab==="wall"?"예: 욕실 벽":"예: 거실 바닥"}/></div>
+      {mode==="box"?<div style={{marginBottom:14}}><Lbl>박스 수량</Lbl><NInput value={bc} onChange={setBc} placeholder="0" unit="박스" width={90}/>{bc>0&&<div style={{fontSize:11,color:C.mid1,marginTop:6}}>= {(parseFloat(bc)||0)*tile.perBox}장</div>}</div>
+      :tab==="wall"?<div style={{marginBottom:14}}><Lbl>벽 치수</Lbl><div style={{display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap"}}>
+        <div><div style={{fontSize:10,color:C.mid1,marginBottom:4}}>길이</div><NInput value={wl} onChange={setWl} unit="m"/></div>
+        <div><div style={{fontSize:10,color:C.mid1,marginBottom:4}}>천장고<InBtn active={uch} onClick={()=>setUch(v=>!v)}>직접입력</InBtn></div>
+          {uch?<NInput value={ch} onChange={setCh} placeholder="2300" unit="mm" width={90}/>:<div style={{padding:"10px 11px",borderRadius:6,border:"1px solid "+C.divider,fontSize:17,fontWeight:700,color:C.mid1,background:C.light,width:80,textAlign:"right"}}>2300<span style={{fontSize:12,fontWeight:400,color:C.mid1,marginLeft:3}}>mm</span></div>}
+        </div></div></div>
+      :<div style={{marginBottom:14}}><Lbl>바닥 치수</Lbl><div style={{display:"flex",gap:10,alignItems:"center"}}><NInput value={fw} onChange={setFw} placeholder="가로" unit="m"/><span style={{color:C.mid1,fontSize:13}}>×</span><NInput value={fd} onChange={setFd} placeholder="세로" unit="m"/></div></div>}
+      <Divdr/>
+      <div style={{marginBottom:14}}><Lbl>타일 규격</Lbl><div style={{display:"flex",flexWrap:"wrap",gap:5}}>{tiles.map(t=><TagBtn key={t.id} active={sel===t.id} onClick={()=>setSel(t.id)}>{t.label}</TagBtn>)}</div><div style={{fontSize:11,color:C.mid1,marginTop:8}}>1박스 = {tile.perBox}장{tile.price>0?` · ${fmt(tile.price)}원/박스`:""}</div></div>
+      <LossInput lr={lr} setLr={setLr}/>
+      {prev&&<div style={{background:C.preview,borderRadius:8,padding:"12px 14px",marginBottom:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div><span style={{fontSize:12,color:C.mid2,fontWeight:600}}>{tile.label} 타일</span>{prev.area&&<span style={{fontSize:11,color:C.mid1,marginLeft:6}}>{prev.area.toFixed(2)}㎡</span>}</div>
+          <div style={{textAlign:"right"}}><span style={{fontSize:14,fontWeight:700,color:C.text}}>{prev.count}장 / {prev.boxes}박스</span>{prev.total&&<div style={{fontSize:11,color:C.mid2}}>{fmt(prev.total)}원</div>}</div>
+        </div>
+      </div>}
+      <AddBtn canAdd={can} onClick={add}/>
+    </Card>
+    {ci.length>0&&<Card>{ci.map((item,i)=><div key={item.id} style={{display:"flex",alignItems:"center",gap:10,padding:"13px 0",borderBottom:i<ci.length-1?"1px solid "+C.divider:"none"}}>
+      <span style={{fontSize:10,color:C.mid1,width:14,flexShrink:0,textAlign:"center"}}>{item.type==="wall"?"벽":item.type==="floor"?"바":"박"}</span>
+      <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:600,color:C.text}}>{item.label}</div><div style={{fontSize:11,color:C.mid1,marginTop:1}}>{item.tile.label}{item.result.area?` · ${item.result.area.toFixed(2)}㎡`:""}</div></div>
+      <div style={{textAlign:"right",flexShrink:0}}><div style={{fontSize:13,fontWeight:600,color:C.text}}>{item.result.count}장 / {item.result.boxes}박스</div>{item.result.total&&<div style={{fontSize:11,color:C.mid2}}>{fmt(item.result.total)}원</div>}</div>
+      <button onClick={()=>rm(item.id)} style={{border:"none",background:"none",cursor:"pointer",color:C.mid1,fontSize:18,padding:"0 2px",flexShrink:0}}>×</button>
+    </div>)}</Card>}
+    {ci.length>0&&<TotalBox items={ci.length} lr={lr} note="인건비·줄눈·접착제 별도">
+      <div style={{fontSize:30,fontWeight:700,letterSpacing:-1,marginBottom:4}}>{tot.count}장</div>
+      <div style={{fontSize:16,fontWeight:600,color:C.mid1,marginBottom:tot.hasPrice?16:0}}>{tot.boxes}박스</div>
+      {tot.hasPrice&&<div style={{fontSize:22,fontWeight:700,color:C.light,marginBottom:4}}>{fmt(tot.total)}원</div>}
+    </TotalBox>}
+  </div>;
+}
+
+// ── 도배지 ──
+function WallpaperCalc(){
+  const[pyeong,setPyeong]=useState("");
+  const[mult,setMult]=useState(2.7);
+  const[ppr,setPpr]=useState("");
+  const[items,setItems]=useState([]);
+  const[lbl,setLbl]=useState("");
+  const PPR=5;
+  const sp=parseFloat(pyeong)||0;
+  const ap=sp*mult;
+  const rolls=sp>0?Math.ceil(ap/PPR):0;
+  const price=parseFloat(ppr)||0;
+  const total=rolls*price;
+  const can=sp>0;
+  function add(){if(!can)return;const l=lbl||`${sp}평 (×${mult})`;setItems(p=>[...p,{id:uid++,label:l,sp,mult,ap,rolls,ppr:price,total:rolls*price}]);setLbl("");setPyeong("");}
+  function rm(id){setItems(p=>p.filter(i=>i.id!==id));}
+  const tot=useMemo(()=>items.reduce((a,i)=>({rolls:a.rolls+i.rolls,total:a.total+i.total,hp:a.hp||i.ppr>0}),{rolls:0,total:0,hp:false}),[items]);
+  return <div>
+    <Card>
+      <div style={{marginBottom:14}}><Lbl>이름 (선택)</Lbl><TInput value={lbl} onChange={setLbl} placeholder="예: 안방, 거실"/></div>
+      <div style={{marginBottom:14}}><Lbl>공급평수</Lbl><NInput value={pyeong} onChange={setPyeong} placeholder="0" unit="평" width={90}/></div>
+      <div style={{marginBottom:14}}>
+        <Lbl>소요량 배수 <span style={{color:C.mid1,fontSize:10}}>(공급평수 대비 실소요)</span></Lbl>
+        <div style={{display:"flex",gap:5,marginBottom:8}}>{[2.5,2.7,3.0].map(v=><Btn key={v} active={mult===v} onClick={()=>setMult(v)}>{v}배</Btn>)}</div>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <input type="number" min="1" max="5" step="0.1" value={mult} onChange={e=>setMult(Math.max(1,Math.min(5,parseFloat(e.target.value)||2.7)))}
+            style={{width:70,padding:"9px 10px",borderRadius:6,fontSize:15,fontWeight:700,border:"1px solid "+C.mid1,outline:"none",color:C.text,textAlign:"right",background:C.card}}/>
+          <span style={{fontSize:12,color:C.mid2}}>배 직접 입력</span>
+        </div>
+      </div>
+      <div style={{marginBottom:18}}><Lbl>롤당 가격 (선택)</Lbl><NInput value={ppr} onChange={setPpr} placeholder="0" unit="원/롤" width={110}/><div style={{fontSize:11,color:C.mid1,marginTop:6}}>1롤 = {PPR}평 기준</div></div>
+      {sp>0&&<div style={{background:C.preview,borderRadius:8,padding:"12px 14px",marginBottom:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:C.text,marginBottom:5}}><span>공급평수</span><span style={{fontWeight:600}}>{sp}평</span></div>
+        <div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:C.text,marginBottom:5}}><span>실소요 ({mult}배)</span><span style={{fontWeight:600}}>{ap.toFixed(1)}평</span></div>
+        <div style={{borderTop:"1px solid "+C.divider,marginTop:8,paddingTop:8}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}><span style={{fontSize:12,color:C.mid2}}>필요 롤 수</span><span style={{fontSize:20,fontWeight:700,color:C.text}}>{rolls}롤</span></div>
+          {price>0&&<div style={{display:"flex",justifyContent:"space-between",marginTop:4}}><span style={{fontSize:12,color:C.mid2}}>소계</span><span style={{fontSize:14,fontWeight:700,color:C.text}}>{fmt(total)}원</span></div>}
+        </div>
+      </div>}
+      <AddBtn canAdd={can} onClick={add}/>
+    </Card>
+    {items.length>0&&<Card>{items.map((item,i)=><div key={item.id} style={{display:"flex",alignItems:"center",gap:10,padding:"13px 0",borderBottom:i<items.length-1?"1px solid "+C.divider:"none"}}>
+      <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:600,color:C.text}}>{item.label}</div><div style={{fontSize:11,color:C.mid1,marginTop:1}}>{item.sp}평 × {item.mult} = {item.ap.toFixed(1)}평</div></div>
+      <div style={{textAlign:"right",flexShrink:0}}><div style={{fontSize:13,fontWeight:600,color:C.text}}>{item.rolls}롤</div>{item.total>0&&<div style={{fontSize:11,color:C.mid2}}>{fmt(item.total)}원</div>}</div>
+      <button onClick={()=>rm(item.id)} style={{border:"none",background:"none",cursor:"pointer",color:C.mid1,fontSize:18,padding:"0 2px",flexShrink:0}}>×</button>
+    </div>)}</Card>}
+    {items.length>0&&<TotalBox items={items.length} lr={0} note={"인건비 별도 · 1롤 = "+PPR+"평 기준"}>
+      <div style={{fontSize:30,fontWeight:700,letterSpacing:-1,marginBottom:4}}>{tot.rolls}롤</div>
+      {tot.hp&&<div style={{fontSize:22,fontWeight:700,color:C.light,marginBottom:4}}>{fmt(tot.total)}원</div>}
+    </TotalBox>}
+  </div>;
+}
+
+// ── 메인 ──
+const MENUS=[{id:"wood",label:"목자재\n산출"},{id:"tile",label:"타일\n산출"},{id:"wallpaper",label:"도배지\n산출"}];
+function App(){
+  const[active,setActive]=useState("wood");
+  const titles={wood:"목자재산출",tile:"타일산출",wallpaper:"도배지산출"};
+  const subs={wood:"재료비 기준 · 인건비 별도",tile:"수량 기준 · 단가 입력 시 금액 표시",wallpaper:"공급평수 기준 · 롤 수량 산출"};
+  return(
+    <div style={{display:"flex",minHeight:"100vh",minHeight:"-webkit-fill-available",background:C.bg,fontFamily:"-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif"}}>
+      <div style={{width:64,background:C.sidebar,display:"flex",flexDirection:"column",alignItems:"center",paddingTop:"env(safe-area-inset-top, 24px)",paddingTop:24,gap:6,flexShrink:0,position:"fixed",top:0,left:0,bottom:0}}>
+        <div style={{fontSize:9,color:C.mid2,letterSpacing:1,marginBottom:12,writingMode:"vertical-rl"}}>산출</div>
+        {MENUS.map(m=><button key={m.id} onClick={()=>setActive(m.id)} style={{width:48,padding:"12px 4px",borderRadius:8,border:"none",cursor:"pointer",background:active===m.id?C.dark:"transparent",color:active===m.id?"#fff":C.mid2,fontSize:11,fontWeight:active===m.id?700:500,lineHeight:1.5,whiteSpace:"pre",textAlign:"center",transition:"all 0.15s"}}>{m.label}</button>)}
+      </div>
+      <div style={{flex:1,marginLeft:64,padding:"24px 16px 40px",overflowY:"auto",WebkitOverflowScrolling:"touch"}}>
+        <div style={{maxWidth:480,margin:"0 auto"}}>
+          <div style={{marginBottom:24}}>
+            <div style={{fontSize:18,fontWeight:700,color:C.text,letterSpacing:-0.5}}>{titles[active]}</div>
+            <div style={{fontSize:11,color:C.mid2,marginTop:3}}>{subs[active]}</div>
+          </div>
+          {active==="wood"?<WoodCalc/>:active==="tile"?<TileCalc/>:<WallpaperCalc/>}
+        </div>
+      </div>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
